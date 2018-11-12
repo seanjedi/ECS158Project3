@@ -54,6 +54,7 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 	for(int i = 0; i < N * N; i++){ // Matrix initialization
 		A[i] = i/N + i%N;
 		B[i] = i/N + (i%N)*2;
+		temp[i] = 0;
 		C[i] = 0;
 	}
 
