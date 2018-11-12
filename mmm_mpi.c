@@ -5,7 +5,7 @@
 #include<string.h>
 
 unsigned int matrix_checksum(int N, void *M, unsigned int size);
-
+void print_matrix(double* M, int matrix_size, int n);
 /////////////////////
 //Multiply Function//
 /////////////////////
@@ -21,7 +21,6 @@ void multiply_mpi(double* A, double* B, double* C, int N, int chunk_size, int my
                         }
                 }
     }
-
 	return;
 }
 
@@ -45,9 +44,9 @@ int main(int argc, char **argv)
 		printf("Error: wrong matrix order (0 < N <= 2000)\n");
 		exit(1);
 	}
-	if(N <= 0 || N > 2000){
-                printf("Error: wrong matrix order (0 < N <= 2000)\n");
-                exit(1);
+	if(N <= 0){
+	    printf("Error: wrong matrix order (0 < N <= 2000)\n");
+	    exit(1);
 	}
 	
 		chunk_size = N/(com_size);
@@ -72,8 +71,8 @@ int main(int argc, char **argv)
 	for(int i = 0; i < N * N; i++){ // Matrix initialization
 		A[i] = i/N + i%N;
 		B[i] = i/N + (i%N)*2;
-		C[i] = 0;
 		temp[i] = 0;
+		C[i] = 0;
 	}
 
 	struct timespec before, after;
@@ -88,23 +87,62 @@ int main(int argc, char **argv)
 		if(com_rank == 0)
 			multiply_mpi(A, B, C, N, N, N, 0);
 	}else{
-		multiply_mpi(A, B, temp, N, chunk_size, my_chunk, com_rank);
-
+		
+		multiply_mpi(A, B, temp, N, chunk_size, my_chunk, com_rank);	
 		//Receive matrix data
 		if(com_rank == 0){
+			// printf("==========temp0============\n");
+			// print_matrix(temp, N*N, N);
 			for(int i = 0; i < N*N; i++)
 				C[i] += temp[i];
+
+			// indexing for our C
+			int offset = com_rank+chunk_size*N;
+
 			for(int i = 1; i < com_size; i++){
-				MPI_Recv(temp, N*N, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-				for(int i = 0; i < N*N; i++)
-					C[i] += temp[i];
-				// printf("C: %u\n", matrix_checksum(N, C, sizeof(double)));
-				// printf("temp: %u\n", matrix_checksum(N, temp, sizeof(double)));
-				
+				if(i  == com_size - 1) {
+					double *buffer = (double*) malloc(sizeof(double)*N*last_chunk);
+					
+					for(int i = 0; i < N*last_chunk; i++) {
+						buffer[i] = 0.0;
+					}
+
+					// using buffer instead of temp because MPI_Recv kept on receiving data from index 0 
+					// regardless of how I tried to index the location, it would always receive the data at 0
+					// I may be wrong about this, but hey its working.
+					MPI_Recv(&buffer[0], N*last_chunk, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+					
+					int count = 0;
+					for(int i = offset; i < offset+N*last_chunk; i++) {
+						// printf("buffer[%d] = %lf\n", i, buffer[count]);
+						C[i] += buffer[count];
+						count++;
+					}
+					offset += N*last_chunk;
+
+					free(buffer);
+				} else {
+					double *buffer = (double*) malloc(sizeof(double)*N*chunk_size);
+					for(int i = 0; i < N*chunk_size; i++) {
+						buffer[i] = 0.0;
+					}
+					
+					MPI_Recv(&buffer[0], N*chunk_size, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+					
+					int count = 0;
+					for(int i = offset; i < offset+N*chunk_size; i++) {
+						// printf("buffer[%d] = %lf\n", i, buffer[count]);
+						C[i] += buffer[count];
+						count++;
+					}
+					offset += N*chunk_size;
+
+					free(buffer);
+				}
 			}
-		}else{
+		}else{	
 			//Send matrix data
-			MPI_Send(temp, N * N, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+			MPI_Send((temp+(N*com_rank*chunk_size)), my_chunk*N, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 		}
 	}
 
@@ -128,4 +166,20 @@ int main(int argc, char **argv)
 	MPI_Finalize();
 	
 	return 0;
+}
+
+void print_matrix(double* M, int matrix_size, int n) {
+    printf("-----Printing Matrix-----\n");
+    int count = 0;
+    for(int i = 0; i < matrix_size; i++) {
+
+        printf("%f , ", M[i]);
+        count++;
+        if(count%n == 0) {
+        	printf("\n");
+        	count = 0;
+        }
+
+    }
+    printf("\n");
 }
