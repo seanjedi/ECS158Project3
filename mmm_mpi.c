@@ -72,6 +72,8 @@ int main(int argc, char **argv)
 	for(int i = 0; i < N * N; i++){ // Matrix initialization
 		A[i] = i/N + i%N;
 		B[i] = i/N + (i%N)*2;
+		C[i] = 0;
+		temp[i] = 0;
 	}
 
 	struct timespec before, after;
@@ -93,10 +95,7 @@ int main(int argc, char **argv)
 			for(int i = 0; i < N*N; i++)
 				C[i] += temp[i];
 			for(int i = 1; i < com_size; i++){
-				if(i  == com_size - 1)
-					MPI_Recv((temp + chunk_size * i), last_chunk * last_chunk, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-				else
-					MPI_Recv((temp + chunk_size * i), chunk_size * chunk_size, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+				MPI_Recv(temp, N*N, MPI_DOUBLE, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
 				for(int i = 0; i < N*N; i++)
 					C[i] += temp[i];
 				// printf("C: %u\n", matrix_checksum(N, C, sizeof(double)));
@@ -105,7 +104,7 @@ int main(int argc, char **argv)
 			}
 		}else{
 			//Send matrix data
-			MPI_Send((temp + chunk_size * com_rank), my_chunk * my_chunk, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+			MPI_Send(temp, N * N, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
 		}
 	}
 
