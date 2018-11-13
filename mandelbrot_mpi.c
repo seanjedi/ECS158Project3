@@ -15,7 +15,7 @@ int validate_double_boundary(char *arg, double start, double end, char *output);
 
 void com0(int com_rank, int com_size, int argc, char **argv);
 void coms(int com_rank, int com_size);
-int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix);
+int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix, int start);
 
 int main(int argc, char **argv) {
 
@@ -93,14 +93,26 @@ void input_validation(char **argv) {
         exit(1);
 }
 
-int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix) {
-
-    printf("Hello\n");
+int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix, int start) {
+    double zcurr = 0, znext = 0;
+    for(int y = start; y < my_chunk; y++){
+        for(int x = 0; x < 1024; x++){
+            int xvalue = x * increment;
+            int yvalue = y * increment;
+            double complex C = xvalue + yvalue * I;
+            for(int iteration = 0; iteration < cutoff; iteration++){
+                znext = pow(zcurr, zcurr) + cabs(C);
+                matrix[((y - start)*1024) + x] += 1;
+                if(abs(znext - zcurr) > 2)
+                    break;
+            }
+        }
+    }
     return 0;
 }
 
 void com0(int com_rank, int com_size, int argc, char **argv) {
-    int zoom, cutoff, chunk_size, last_chunk;
+    int zoom, cutoff, chunk_size, last_chunk, start;
     double xcenter, ycenter, increment; 
     if (argc == 5) {
         input_validation(argv);
@@ -118,14 +130,18 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
     cutoff = atoi(argv[4]);
     increment = pow(2,(double) -zoom);
 
-    MPI_Send((A+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-
     for(int i = 1; i < com_size; i ++){
         if(i == com_size - 1)
             MPI_Send(&last_chunk, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
         else
             MPI_Send(&chunk_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
     }
+
+    for(int i = 1; i < com_size; i ++){
+        start = i * chunk_size;
+        MPI_Send(&start, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+    }
+
     MPI_Bcast(&xcenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&ycenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&cutoff, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -133,13 +149,36 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
 
     int *matrix = (int*) calloc(1024*1024, sizeof(int));
 
-    compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix);
+    compute_mandelbrot(xcenter, ycenter, chunk_size, cutoff, increment, matrix, 0);
+    
+    int offset = com_rank+chunk_size*1024;
+    // int rowNumber = 0;
 
     for(int i = 1; i < com_size; i ++){
-        if(i == com_size - 1)
-            MPI_Recv(, 1024*last_chunk, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-        else
-            MPI_Recv(, 1024*chunk_size, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+        if(i == com_size - 1) {
+            int* buffer = calloc(1024*last_chunk, sizeof(double));
+            MPI_Recv(buffer, 1024*last_chunk, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+
+            int count = 0;
+            for(int i = offset; i < offset+1024*last_chunk; i++) {
+                matrix[i] += buffer[count];
+                count++;
+            }
+
+            free(buffer);
+        } else {
+            int* buffer = calloc(1024*chunk_size, sizeof(double));
+            MPI_Recv(buffer, 1024*chunk_size, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+
+            int count = 0;
+            for(int i = offset; i < offset+1024*chunk_size; i++) {
+                matrix[i] += buffer[count];
+                count++;
+            }
+
+            free(buffer);
+        }
+
     }
 
 
@@ -147,21 +186,22 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
     free(matrix);
 
       
-}
+} 
 
 void coms(int com_rank, int com_size) {
-    int cutoff, my_chunk;
+    int cutoff, my_chunk, start;
     double xcenter, ycenter, increment;
 
     MPI_Recv(&my_chunk, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+    MPI_Recv(&start, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
     MPI_Bcast(&xcenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&ycenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&cutoff, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&increment, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    int *matrix = (int*) calloc(1024*my_chunk, sizeof(int)); 
+    int *matrix = (int*) calloc(1024*my_chunk, sizeof(int));
 
-    compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix);
+    compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix, start);
 
     MPI_Send(matrix, my_chunk * 1024, MPI_INT, 0, 0, MPI_COMM_WORLD);
     free(matrix);
