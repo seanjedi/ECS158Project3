@@ -3,7 +3,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
-#include<mpi.h>
+#include <mpi.h>
+#include <complex.h>
+#include <math.h>
 
 unsigned int matrix_checksum(int N, double *M);
 
@@ -13,7 +15,7 @@ int validate_double_boundary(char *arg, double start, double end, char *output);
 
 void com0(int com_rank, int com_size, int argc, char **argv);
 void coms(int com_rank, int com_size);
-int compute_mandelbrot(char **argv);
+int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix);
 
 int main(int argc, char **argv) {
 
@@ -87,17 +89,19 @@ void input_validation(char **argv) {
     if (!(validate_double_boundary(argv[1], -10.000000, 10.000000, "x-center") && 
         validate_double_boundary(argv[2], -10.000000, 10.000000, "y-center") && 
         validate_int_boundary(argv[3], 0, 100, "zoom") && 
-        validate_int_boundary(argv[4], 50, 1000, "cutoff")))
+        validate_int_boundary(argv[4], 0, 1000, "cutoff")))
         exit(1);
 }
 
-int compute_mandelbrot(char **argv) {
+int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff, double increment, int* matrix) {
 
     printf("Hello\n");
     return 0;
 }
 
 void com0(int com_rank, int com_size, int argc, char **argv) {
+    int zoom, cutoff, chunk_size, last_chunk;
+    double xcenter, ycenter, increment; 
     if (argc == 5) {
         input_validation(argv);
     } else {
@@ -105,12 +109,60 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
         "Usage: ./mandelbrot_mpi_reference xcenter ycenter zoom cutoff\n");
         exit(1);
     }
-    
-    compute_mandelbrot(argv);
+
+    chunk_size = 1024/(com_size);
+    last_chunk = 1024 - (chunk_size * (com_size - 1 ));
+    xcenter = atof(argv[1]);
+    ycenter = atof(argv[2]);
+    zoom = atoi(argv[3]);
+    cutoff = atoi(argv[4]);
+    increment = pow(2,(double) -zoom);
+
+    MPI_Send((A+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
+
+    for(int i = 1; i < com_size; i ++){
+        if(i == com_size - 1)
+            MPI_Send(&last_chunk, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+        else
+            MPI_Send(&chunk_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+    }
+    MPI_Bcast(&xcenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&ycenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&cutoff, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&increment, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    int *matrix = (int*) calloc(1024*1024, sizeof(int));
+
+    compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix);
+
+    for(int i = 1; i < com_size; i ++){
+        if(i == com_size - 1)
+            MPI_Recv(, 1024*last_chunk, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+        else
+            MPI_Recv(, 1024*chunk_size, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+    }
+
+
+
+    free(matrix);
+
       
 }
 
 void coms(int com_rank, int com_size) {
+    int cutoff, my_chunk;
+    double xcenter, ycenter, increment;
 
+    MPI_Recv(&my_chunk, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+    MPI_Bcast(&xcenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&ycenter, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&cutoff, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&increment, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+    int *matrix = (int*) calloc(1024*my_chunk, sizeof(int)); 
+
+    compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix);
+
+    MPI_Send(matrix, my_chunk * 1024, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    free(matrix);
 }
