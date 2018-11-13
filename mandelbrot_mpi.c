@@ -134,12 +134,34 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
     int *matrix = (int*) calloc(1024*1024, sizeof(int));
 
     compute_mandelbrot(xcenter, ycenter, my_chunk, cutoff, increment, matrix);
+    
+    int offset = com_rank+chunk_size*1024;
 
     for(int i = 1; i < com_size; i ++){
-        if(i == com_size - 1)
-            MPI_Recv(, 1024*last_chunk, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-        else
-            MPI_Recv(, 1024*chunk_size, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+        if(i == com_size - 1) {
+            int* buffer = calloc(1024*last_chunk, sizeof(double)) 
+            MPI_Recv(buffer, 1024*last_chunk, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+
+            int count = 0;
+            for(int i = offset; i < offset+1024*last_chunk; i++) {
+                matrix[i] += buffer[count];
+                count++;
+            }
+
+            free(buffer);
+        } else {
+            int* buffer = calloc(1024*chunk_size, sizeof(double))
+            MPI_Recv(buffer, 1024*chunk_size, MPI_INT, i, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+
+            int count = 0;
+            for(int i = offset; i < offset+1024*chunk_size; i++) {
+                matrix[i] += buffer[count];
+                count++;
+            }
+
+            free(buffer);
+        }
+
     }
 
 
