@@ -101,8 +101,8 @@ int compute_mandelbrot(double xcenter, double ycenter, int my_chunk, int cutoff,
     double complex zcurr = 0, znext = 0;
     for(int y = start; y < start + my_chunk; y++){
         for(int x = 0; x < 1024; x++){
-            double xvalue = xcenter + (512 * increment) - x * increment;
-            double yvalue = ycenter - (512 * increment) + y * increment ;  // Need to rotate it 90
+            double xvalue = xcenter - (512 * increment) + x * increment;
+            double yvalue = ycenter - (512 * increment) + y * increment;  // Need to rotate it 90
          
             double complex C = xvalue + yvalue * I;
             for(int iteration = 0; iteration < cutoff; iteration++){
@@ -200,9 +200,6 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
     double seconds = elapsed_ns / (1E9);
     // printf("==========matrix============\n");
     // print_matrix(matrix, 1024*1024, 1024);     
-    
-    printf("Running time: %f secs\n", seconds);
-    printf("M: %u\n", matrix_checksum(1024, matrix, sizeof(int)));
 
 
     char name[255];
@@ -214,18 +211,48 @@ void com0(int com_rank, int com_size, int argc, char **argv) {
     fprintf(fp, "1024 1024\n");
     fprintf(fp, "%d\n", cutoff);
     int count = 0;
-    for(int i = 0; i < 1024*1024; i++) {
-        fprintf(fp, "%d ", matrix[i]);
-        count++;
-        if(count == 1024) {
-            fprintf(fp, "\n");
-            count = 0;
+//                 int j = 0;
+//                 int p = 0;
+//                 int q = 0;
+
+    int *transposed_matrix = (int*) calloc(1024*1024, sizeof(int));
+
+    for(int j = 0; j < 1024; j++) {
+        for(int i = 0; i < 1024; i++) {
+            transposed_matrix[i + j * 1024] = matrix[j + i * 1024];
+            fprintf(fp, "%d ", matrix[j + i * 1024]);
+            count++;
+            if(count == 1024) {
+                fprintf(fp, "\n");
+                count = 0;
+            }
         }
     }
+
+    printf("Running time: %f secs\n", seconds);
+    printf("M: %u\n", matrix_checksum(1024, transposed_matrix, sizeof(int)));
+//                 int i = m - 1;
+//                 int[,] rotatedArr = new int[m, n];
+ 
+                //for (int i = m-1; i >= 0; i--)
+    // for (int k = 0; k < m; k++)
+    //             {
+ 
+    //                 while (i >= 0)
+    //                 {
+    //                     rotatedArr[p, q] = arry[i, j];
+    //                     q++;
+    //                     i--;
+    //                 }
+    //                 j++;
+    //                 i = m - 1;
+    //                 q = 0;
+    //                 p++;
+ 
+    //             }
     fclose(fp);
-
     free(matrix);
-
+    free(transposed_matrix);
       
 } 
 
