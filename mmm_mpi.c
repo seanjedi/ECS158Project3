@@ -21,12 +21,14 @@ int main(int argc, char **argv)
 	int com_size, com_rank;
 	MPI_Comm_size(MPI_COMM_WORLD, &com_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &com_rank);
-
+	
+	//Split off the master and the workers
 	if(com_rank == 0)
         com0(com_rank, com_size, argc, argv);
 	else
         coms(com_rank, com_size);
-		
+	
+	//Stop MPI
 	MPI_Finalize();
 	
 	return 0;
@@ -36,15 +38,14 @@ int main(int argc, char **argv)
 //Multiply Function//
 /////////////////////
 void multiply_mpi(double* A, double* B, double* C, int N, int myChunk){
-	// int start = chunk_size * rank;
-	// int stop = start + myChunk;
+	//Do the IKJ loop to make it faster
 	for(int i = 0 ; i < myChunk; i++){
-        	for(int k = 0; k < N; k++){
-	                double temp = A[i*N + k];
-                        for(int j = 0; j < N; j++){
-          	              C[i*N + j] += temp * B[k*N + j];
-                        }
-                }
+		for(int k = 0; k < N; k++){
+			double temp = A[i*N + k];
+			for(int j = 0; j < N; j++){
+				C[i*N + j] += temp * B[k*N + j];
+			}
+		}
     }
 	return;
 }
@@ -83,16 +84,15 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 	chunk_size = N/(com_size);
 	double* A = malloc(sizeof(double) * N * N);
 	double* B = malloc(sizeof(double) * N * N);
-	double* C = malloc(sizeof(double) * N * N);
+	double* C = (double*) calloc(N*N, sizeof(double));
 	for(int i = 0; i < N * N; i++){ // Matrix initialization
 		A[i] = i/N + i%N;
 		B[i] = i/N + (i%N)*2;
-		C[i] = 0;
 	}
 
 	//If N is smaller than com_size, do everything on this processor
 	//Else split work
-	if(N < com_size)
+	if(N <= com_size)
 		multiply_mpi(A, B, C, N, N);
 	else{
 		int last_chunk = N - (chunk_size * (com_size - 1 ));
@@ -100,12 +100,10 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 		for(int i = 1; i < com_size; i++){
 			if(i == com_size - 1){
 				MPI_Send((A+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send((B+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send((C+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
+				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}else{
 				MPI_Send((A+(N*i*chunk_size)), N*chunk_size, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send((B+(N*i*chunk_size)), N*chunk_size, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send((C+(N*i*chunk_size)), N*chunk_size, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
+				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}
 		}
 		//Compute block data for com 0
@@ -145,19 +143,20 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 				free(buffer);
 			}
 		}
-		//Print times and free data
-		clock_gettime(CLOCK_MONOTONIC, &after);
-		unsigned long elapsed_ns = (after.tv_sec - before.tv_sec)*(1E9) + after.tv_nsec - before.tv_nsec;
-		double seconds = elapsed_ns / (1E9);
-		printf("Running time: %f secs\n", seconds);
-
-		printf("A: %u\n", matrix_checksum(N, A, sizeof(double)));
-		printf("B: %u\n", matrix_checksum(N, B, sizeof(double)));
-		printf("C: %u\n", matrix_checksum(N, C, sizeof(double)));
-		free(A);
-    	free(B);
-    	free(C);
 	}
+	//Print times and free data
+	clock_gettime(CLOCK_MONOTONIC, &after);
+	unsigned long elapsed_ns = (after.tv_sec - before.tv_sec)*(1E9) + after.tv_nsec - before.tv_nsec;
+	double seconds = elapsed_ns / (1E9);
+	printf("Running time: %f secs\n", seconds);
+
+	printf("A: %u\n", matrix_checksum(N, A, sizeof(double)));
+	printf("B: %u\n", matrix_checksum(N, B, sizeof(double)));
+	printf("C: %u\n", matrix_checksum(N, C, sizeof(double)));
+	free(A);
+	free(B);
+	free(C);
+
 }
 
 //////////////
@@ -178,11 +177,10 @@ void coms(int com_rank, int com_size){
 		
 		//Get each of its ABC values from com 0
 		double* A = (double*) calloc(N*my_chunk, sizeof(double));
-		double* B = (double*) calloc(N*my_chunk, sizeof(double));
+		double* B = malloc(sizeof(double) * N * N);
 		double* C = (double*) calloc(N*my_chunk, sizeof(double));
 		MPI_Recv(A, N*my_chunk, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-		MPI_Recv(B, N*my_chunk, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-		MPI_Recv(C, N*my_chunk, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+		MPI_Recv(B, N*N, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
 
 		//Perform multiply function on block 
 		multiply_mpi(A, B, C, N, my_chunk);
