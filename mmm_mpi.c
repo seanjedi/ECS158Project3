@@ -101,13 +101,12 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 			if(i == com_size - 1){
 				MPI_Send(&last_chunk, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send((A+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}else{
 				MPI_Send(&chunk_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send((A+(N*i*chunk_size)), N*chunk_size, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}
 		}
+		MPI_Bcast(B, N*N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 		//Compute block data for com 0
 		multiply_mpi(A, B, C, N, chunk_size);
 
@@ -178,7 +177,7 @@ void coms(int com_rank, int com_size){
 		double* B = (double*) calloc(N * N, sizeof(double));
 		double* C = (double*) calloc(N*my_chunk, sizeof(double));
 		MPI_Recv(A, N*my_chunk, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
-		MPI_Recv(B, N*N, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
+		MPI_Bcast(B, N*N, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
 		//Perform multiply function on block 
 		multiply_mpi(A, B, C, N, my_chunk);
