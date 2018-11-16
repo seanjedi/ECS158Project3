@@ -15,5 +15,5 @@ mandelbrot_mpi: $(prog2)
 	$(CC) $(CFLAGS) $(prog2) -o $@ -lm
 
 clean:
-	rm -f $(exes)
+	rm -f $(exes) *.pgm
 
