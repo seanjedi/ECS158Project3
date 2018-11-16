@@ -99,9 +99,11 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 		//Give each processor its own data
 		for(int i = 1; i < com_size; i++){
 			if(i == com_size - 1){
+				MPI_Send(&last_chunk, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send((A+(N*i*chunk_size)), N*last_chunk, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}else{
+				MPI_Send(&chunk_size, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send((A+(N*i*chunk_size)), N*chunk_size, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 				MPI_Send(B, N*N, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
 			}
@@ -163,21 +165,17 @@ void com0(int com_rank, int com_size, int argc, char **argv){
 //Other Coms//
 //////////////
 void coms(int com_rank, int com_size){
-	int N, my_chunk, chunk_size;
+	int N, my_chunk;
 	
 	//Await N value Broadcaset
 	MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	if(N > com_size){
-		chunk_size = N/(com_size);
-		if(com_rank == com_size - 1)
-			my_chunk = N - (chunk_size * (com_size - 1 ));
-		else
-			my_chunk = N/(com_size);
+		MPI_Recv(&my_chunk, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
 		
 		//Get each of its ABC values from com 0
 		double* A = (double*) calloc(N*my_chunk, sizeof(double));
-		double* B = malloc(sizeof(double) * N * N);
+		double* B = (double*) calloc(N * N, sizeof(double));
 		double* C = (double*) calloc(N*my_chunk, sizeof(double));
 		MPI_Recv(A, N*my_chunk, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
 		MPI_Recv(B, N*N, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, 0);
